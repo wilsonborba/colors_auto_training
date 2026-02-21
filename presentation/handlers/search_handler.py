@@ -41,8 +41,22 @@ class _YouTubeSearchProvider:
 
 
 class SearchPlanHandler:
+    _AUTO_SEED_KEYWORDS = [
+        "street interview",
+        "city walking tour",
+        "public places",
+        "crowd vlog",
+        "daily life downtown",
+        "people fashion",
+        "mall walkthrough",
+        "festival crowd",
+        "commuter station",
+        "market street",
+    ]
+
     def __init__(self) -> None:
         settings = get_settings()
+        self.settings = settings
         self.sqlite_adapter = LocalSQLiteAdapter(settings.db_path)
         self.search_provider = _YouTubeSearchProvider(YouTubeRemoteAdapter())
         self.service = SearchPlanService(
@@ -67,6 +81,41 @@ class SearchPlanHandler:
             except ValueError as exc:
                 return PresentationResponseDTO(status_code=400, message=str(exc), data=None)
         return PresentationResponseDTO(status_code=201, message="Search plan created.", data=plan)
+
+    def start_automatic(self, payload: dict) -> PresentationResponseDTO:
+        if not self.settings.groq_plan_generation_enabled:
+            return PresentationResponseDTO(
+                status_code=400,
+                message="Automatic mode requires Groq plan generation to be enabled in settings.",
+                data=None,
+            )
+
+        query = (payload.get("query") or "videos with many visible people in public places").strip()
+        seed_keywords = payload.get("seed_keywords") or self._AUTO_SEED_KEYWORDS
+        seed_phrase = ", ".join(f'"{keyword}"' for keyword in seed_keywords)
+        prompt_query = (
+            f"{query}. Return keywords focused on videos with many visible persons on YouTube. "
+            f"Start from this seed list: {seed_phrase}."
+        )
+
+        with self.sqlite_adapter.connect() as conn:
+            self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
+            try:
+                plan = self.service.create_plan(
+                    conn,
+                    query=prompt_query,
+                    source_type="groq",
+                    video_source_id=payload.get("video_source_id") or self._ensure_default_source(conn),
+                )
+                plan = self.service.run_search(conn, plan_id=plan["id"])
+            except ValueError as exc:
+                return PresentationResponseDTO(status_code=400, message=str(exc), data=None)
+
+        return PresentationResponseDTO(
+            status_code=202,
+            message="Automatic search started with AI-generated keywords.",
+            data=plan,
+        )
 
     def run_plan(self, plan_id: str) -> PresentationResponseDTO:
         with self.sqlite_adapter.connect() as conn:
@@ -123,8 +172,6 @@ class SearchPlanHandler:
             return PresentationResponseDTO(status_code=404, message="Search result not found.", data=None)
         return PresentationResponseDTO(status_code=200, message="Search result reviewed.", data=result)
 
-
-
     def _ensure_default_source(self, conn) -> str:
         row = conn.execute("SELECT id FROM video_sources WHERE is_enabled = 1 ORDER BY created_at ASC LIMIT 1").fetchone()
         if row:
@@ -174,15 +221,6 @@ def approve_plan(plan_id: str) -> PresentationResponseDTO:
 
 def reject_plan(plan_id: str, reason: str | None) -> PresentationResponseDTO:
     return _HANDLER.reject_plan(plan_id, reason)
-
-
-def review_result(result_id: str, approved: bool, reason: str | None) -> PresentationResponseDTO:
-    with _SQLITE_ADAPTER.connect() as conn:
-        _SQLITE_ADAPTER.run_migrations(conn, "dal/local/migrations")
-        result = _SERVICE.review_result(conn, result_id=result_id, approved=approved, reason=reason)
-    if not result:
-        return PresentationResponseDTO(status_code=404, message="Search result not found.", data=None)
-    return PresentationResponseDTO(status_code=200, message="Search result reviewed.", data=result)
 
 
 def bulk_action(plan_ids: list[str], action: str) -> PresentationResponseDTO:

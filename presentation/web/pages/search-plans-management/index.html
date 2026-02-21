@@ -24,8 +24,12 @@
           </select>
           <input id="plan-keywords" placeholder="keywords (comma separated)" />
           <input id="plan-negative" placeholder="negative keywords (comma separated)" />
-          <button class="button" type="submit">Create plan</button>
+          <button class="button" type="submit">Start manually</button>
+          <button class="button" id="auto-start-btn" type="button">Start automatically (AI)</button>
         </form>
+        <p class="helper-text">
+          Automatic mode sends a hard seed keyword string to AI, gets a generated keyword list, creates the plan, and runs search immediately.
+        </p>
       </section>
 
       <section class="card">

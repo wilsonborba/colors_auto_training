@@ -3,6 +3,7 @@ const queryInput = document.getElementById("plan-query");
 const sourceInput = document.getElementById("plan-source");
 const keywordsInput = document.getElementById("plan-keywords");
 const negativeInput = document.getElementById("plan-negative");
+const autoStartBtn = document.getElementById("auto-start-btn");
 const plansList = document.getElementById("plans-list");
 const resultsList = document.getElementById("results-list");
 
@@ -98,7 +99,19 @@ planForm.addEventListener("submit", async (event) => {
       negative_keywords: splitCsv(negativeInput.value),
     }),
   });
-  queryInput.value = "";
+  keywordsInput.value = "";
+  negativeInput.value = "";
+  await loadPlans();
+});
+
+autoStartBtn.addEventListener("click", async () => {
+  await api("/search-plans/auto-start", {
+    method: "POST",
+    body: JSON.stringify({
+      query: queryInput.value,
+      seed_keywords: splitCsv(keywordsInput.value),
+    }),
+  });
   keywordsInput.value = "";
   negativeInput.value = "";
   await loadPlans();

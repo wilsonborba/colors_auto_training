@@ -24,6 +24,12 @@ class RejectSearchPlanRequest(BaseModel):
     reason: str | None = None
 
 
+class StartAutomaticRequest(BaseModel):
+    query: str | None = None
+    video_source_id: str | None = None
+    seed_keywords: list[str] = Field(default_factory=list)
+
+
 class ReviewSearchResultRequest(BaseModel):
     reason: str | None = None
 
@@ -50,6 +56,11 @@ def create_search_plan_route(request: CreateSearchPlanRequest) -> JSONResponse:
 @router.post("/search-plans/{plan_id}/run")
 def run_search_plan_route(plan_id: str) -> JSONResponse:
     return _to_http(get_search_plan_handler().run_plan(plan_id))
+
+
+@router.post("/search-plans/auto-start")
+def auto_start_search_plan_route(request: StartAutomaticRequest) -> JSONResponse:
+    return _to_http(get_search_plan_handler().start_automatic(request.model_dump()))
 
 
 @router.get("/search-plans")
