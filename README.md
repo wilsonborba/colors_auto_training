@@ -22,4 +22,10 @@ Depois de resolver conflitos e finalizar o rebase:
 git push --force-with-lease
 ```
 
+Se `rg` não estiver instalado no seu ambiente, use este comando para encontrar marcadores de conflito somente nos arquivos versionados:
+
+```bash
+git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':(exclude).venv/**'
+```
+
 Isso normalmente elimina o botão de conflito no PR e evita ter que resolver no editor web.

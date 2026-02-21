@@ -51,6 +51,9 @@ if [[ $REBASERC -ne 0 ]]; then
   echo
   echo "Arquivos em conflito:"
   git diff --name-only --diff-filter=U || true
+  echo
+  echo "Dica: para procurar marcadores de conflito em arquivos rastreados (sem depender de rg):"
+  echo "  git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':(exclude).venv/**'"
   exit $REBASERC
 fi
 
