@@ -8,3 +8,6 @@ numpy
 pydantic
 pydantic-settings
 fastapi
+uvicorn
+yt-dlp
+pytubefix

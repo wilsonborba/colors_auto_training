@@ -176,5 +176,14 @@ def reject_plan(plan_id: str, reason: str | None) -> PresentationResponseDTO:
     return _HANDLER.reject_plan(plan_id, reason)
 
 
+def review_result(result_id: str, approved: bool, reason: str | None) -> PresentationResponseDTO:
+    with _SQLITE_ADAPTER.connect() as conn:
+        _SQLITE_ADAPTER.run_migrations(conn, "dal/local/migrations")
+        result = _SERVICE.review_result(conn, result_id=result_id, approved=approved, reason=reason)
+    if not result:
+        return PresentationResponseDTO(status_code=404, message="Search result not found.", data=None)
+    return PresentationResponseDTO(status_code=200, message="Search result reviewed.", data=result)
+
+
 def bulk_action(plan_ids: list[str], action: str) -> PresentationResponseDTO:
     return _HANDLER.bulk_action(plan_ids, action)
