@@ -8,44 +8,61 @@ _VIDEOS: dict[str, dict] = {
 }
 
 
-class VideoQueueHandler:
-    """Maps video queue mutations/queries into presentation DTOs."""
+def list_videos(self) -> PresentationResponseDTO:
+    return PresentationResponseDTO(
+        status_code=200,
+        message="Video queue fetched successfully.",
+        data=list(_VIDEOS.values()),
+    )
 
-    def list_videos(self) -> PresentationResponseDTO:
+
+def update_priority(self, video_id: str, priority: int) -> PresentationResponseDTO:
+    video = _VIDEOS.get(video_id)
+    if not video:
         return PresentationResponseDTO(
-            status_code=200,
-            message="Video queue fetched successfully.",
-            data=list(_VIDEOS.values()),
+            status_code=404, message="Video not found.", data=None
         )
 
-    def update_priority(self, video_id: str, priority: int) -> PresentationResponseDTO:
-        video = _VIDEOS.get(video_id)
-        if not video:
-            return PresentationResponseDTO(status_code=404, message="Video not found.", data=None)
+    video["priority"] = priority
+    return PresentationResponseDTO(
+        status_code=200, message="Video priority updated.", data=video
+    )
 
-        video["priority"] = priority
-        return PresentationResponseDTO(status_code=200, message="Video priority updated.", data=video)
 
-    def retry_video(self, video_id: str) -> PresentationResponseDTO:
-        video = _VIDEOS.get(video_id)
-        if not video:
-            return PresentationResponseDTO(status_code=404, message="Video not found.", data=None)
+def retry_video(self, video_id: str) -> PresentationResponseDTO:
+    video = _VIDEOS.get(video_id)
+    if not video:
+        return PresentationResponseDTO(
+            status_code=404, message="Video not found.", data=None
+        )
 
-        video["retries"] += 1
-        return PresentationResponseDTO(status_code=200, message="Video retry scheduled.", data=video)
+    video["retries"] += 1
+    return PresentationResponseDTO(
+        status_code=200, message="Video retry scheduled.", data=video
+    )
 
-    def disable_video(self, video_id: str) -> PresentationResponseDTO:
-        video = _VIDEOS.get(video_id)
-        if not video:
-            return PresentationResponseDTO(status_code=404, message="Video not found.", data=None)
 
-        video["enabled"] = False
-        return PresentationResponseDTO(status_code=200, message="Video disabled.", data=video)
+def disable_video(self, video_id: str) -> PresentationResponseDTO:
+    video = _VIDEOS.get(video_id)
+    if not video:
+        return PresentationResponseDTO(
+            status_code=404, message="Video not found.", data=None
+        )
 
-    def enable_video(self, video_id: str) -> PresentationResponseDTO:
-        video = _VIDEOS.get(video_id)
-        if not video:
-            return PresentationResponseDTO(status_code=404, message="Video not found.", data=None)
+    video["enabled"] = False
+    return PresentationResponseDTO(
+        status_code=200, message="Video disabled.", data=video
+    )
 
-        video["enabled"] = True
-        return PresentationResponseDTO(status_code=200, message="Video enabled.", data=video)
+
+def enable_video(self, video_id: str) -> PresentationResponseDTO:
+    video = _VIDEOS.get(video_id)
+    if not video:
+        return PresentationResponseDTO(
+            status_code=404, message="Video not found.", data=None
+        )
+
+    video["enabled"] = True
+    return PresentationResponseDTO(
+        status_code=200, message="Video enabled.", data=video
+    )
