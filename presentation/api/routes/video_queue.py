@@ -22,7 +22,7 @@ def get_video_queue_handler() -> VideoQueueHandler:
 
 
 def _to_http(response_dto: PresentationResponseDTO) -> JSONResponse:
-    return JSONResponse(status_code=response_dto.status_code, content=response_dto.model_dump())
+    return JSONResponse(status_code=response_dto.status_code, content=response_dto.to_dict())
 
 
 @router.get("/videos")
