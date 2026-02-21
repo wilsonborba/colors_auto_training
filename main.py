@@ -3,20 +3,29 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI
+<<<<<<< HEAD
 from fastapi.responses import RedirectResponse
+=======
+>>>>>>> origin/codex/implement-end-to-end-search-plan-flow
 from fastapi.staticfiles import StaticFiles
 
 from core.settings import get_settings
 from presentation.routes.jobs_events import router as jobs_events_router
 from presentation.routes.search_plans import router as search_plans_router
 from presentation.routes.video_queue import router as video_queue_router
+from presentation.routes.web import router as web_router
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="colors_auto_training API")
     app.state.settings = settings
+<<<<<<< HEAD
 
+=======
+    app.mount("/web", StaticFiles(directory="presentation/web"), name="web")
+    app.include_router(web_router)
+>>>>>>> origin/codex/implement-end-to-end-search-plan-flow
     app.include_router(video_queue_router)
     app.include_router(jobs_events_router)
     app.include_router(search_plans_router)

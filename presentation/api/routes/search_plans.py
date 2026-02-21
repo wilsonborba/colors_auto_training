@@ -7,21 +7,7 @@ from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from presentation.handlers.response_dto import PresentationResponseDTO
-<<<<<<< HEAD
-from presentation.handlers.search_handler import (
-    approve_plan,
-    bulk_action,
-    create_plan,
-    get_plan,
-    get_plan_results,
-    list_plans,
-    reject_plan,
-    review_result,
-    run_plan,
-)
-=======
 from presentation.handlers.search_handler import SearchPlanHandler
->>>>>>> origin/codex/implement-end-to-end-search-plan-flow
 
 router = APIRouter(tags=["search-plans"])
 
@@ -57,68 +43,50 @@ def _to_http(response_dto: PresentationResponseDTO) -> JSONResponse:
 
 
 @router.post("/search-plans")
-def create_search_plan_route(request: CreateSearchPlanRequest) -> JSONResponse:
-<<<<<<< HEAD
-    return _to_http(create_plan(request.model_dump()))
-=======
+def create_search_plan(request: CreateSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().create_plan(request.model_dump()))
->>>>>>> origin/codex/implement-end-to-end-search-plan-flow
 
 
 @router.post("/search-plans/{plan_id}/run")
-def run_search_plan_route(plan_id: str) -> JSONResponse:
+def run_search_plan(plan_id: str) -> JSONResponse:
     return _to_http(get_search_plan_handler().run_plan(plan_id))
 
 
 @router.get("/search-plans")
-def list_search_plans_route() -> JSONResponse:
+def list_search_plans() -> JSONResponse:
     return _to_http(get_search_plan_handler().list_plans())
 
 
 @router.get("/search-plans/{plan_id}")
-def get_search_plan_route(plan_id: str) -> JSONResponse:
+def get_search_plan(plan_id: str) -> JSONResponse:
     return _to_http(get_search_plan_handler().get_plan(plan_id))
 
 
 @router.get("/search-plans/{plan_id}/results")
-def get_search_plan_results_route(plan_id: str) -> JSONResponse:
+def get_search_plan_results(plan_id: str) -> JSONResponse:
     return _to_http(get_search_plan_handler().get_plan_results(plan_id))
 
 
 @router.post("/search-plans/{plan_id}/approve")
-def approve_search_plan_route(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
-<<<<<<< HEAD
-    return _to_http(approve_plan(plan_id, request.reason))
-=======
+def approve_search_plan(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().approve_plan(plan_id, request.reason))
->>>>>>> origin/codex/implement-end-to-end-search-plan-flow
 
 
 @router.post("/search-plans/{plan_id}/reject")
-def reject_search_plan_route(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
+def reject_search_plan(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().reject_plan(plan_id, request.reason))
 
 
 @router.post("/search-results/{result_id}/approve")
-def approve_search_result_route(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
+def approve_search_result(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().review_result(result_id, True, request.reason))
 
 
 @router.post("/search-results/{result_id}/reject")
-def reject_search_result_route(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
+def reject_search_result(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().review_result(result_id, False, request.reason))
 
 
-@router.post("/search-results/{result_id}/approve")
-def approve_search_result_route(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
-    return _to_http(review_result(result_id, True, request.reason))
-
-
-@router.post("/search-results/{result_id}/reject")
-def reject_search_result_route(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
-    return _to_http(review_result(result_id, False, request.reason))
-
-
 @router.post("/search-plans/bulk")
-def bulk_search_plan_action_route(request: BulkSearchPlanRequest) -> JSONResponse:
+def bulk_search_plan_action(request: BulkSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().bulk_action(request.plan_ids, request.action))

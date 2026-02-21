@@ -1,5 +1,9 @@
 ## [unreleased]
 
+### 🐛 Bug Fixes
+
+- *(merge)* Fixed the merges conflict
+
 ### ⚙️ Miscellaneous Tasks
 
 - *(env)* Adjusted dir organization
