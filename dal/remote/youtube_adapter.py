@@ -14,3 +14,18 @@ This file must not:
 - Orchestrate pipeline stages
 Those belong to domain services/tasks.
 """
+
+from __future__ import annotations
+
+from core.settings import get_settings
+
+
+def get_youtube_adapter_config() -> dict[str, object | None]:
+    """Return YouTube adapter configuration from centralized settings."""
+    settings = get_settings()
+    return {
+        "enabled": settings.youtube_adapter_enabled,
+        "api_key": settings.youtube_api_key,
+        "base_url": settings.youtube_base_url,
+        "timeout_seconds": settings.youtube_timeout_seconds,
+    }
