@@ -14,9 +14,17 @@ router = APIRouter(tags=["search-plans"])
 
 class CreateSearchPlanRequest(BaseModel):
     query: str = Field(..., min_length=1)
+    source_type: str = Field(default="manual", pattern="^(manual|groq)$")
+    video_source_id: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+    negative_keywords: list[str] = Field(default_factory=list)
 
 
 class RejectSearchPlanRequest(BaseModel):
+    reason: str | None = None
+
+
+class ReviewSearchResultRequest(BaseModel):
     reason: str | None = None
 
 
@@ -31,17 +39,12 @@ def get_search_plan_handler() -> SearchPlanHandler:
 
 
 def _to_http(response_dto: PresentationResponseDTO) -> JSONResponse:
-    return JSONResponse(status_code=response_dto.status_code, content=response_dto.model_dump())
+    return JSONResponse(status_code=response_dto.status_code, content=response_dto.to_dict())
 
 
 @router.post("/search-plans")
 def create_search_plan(request: CreateSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().create_plan(request.model_dump()))
-
-
-@router.post("/search-plans/{plan_id}/generate")
-def generate_search_plan(plan_id: str) -> JSONResponse:
-    return _to_http(get_search_plan_handler().generate_plan(plan_id))
 
 
 @router.post("/search-plans/{plan_id}/run")
@@ -65,13 +68,23 @@ def get_search_plan_results(plan_id: str) -> JSONResponse:
 
 
 @router.post("/search-plans/{plan_id}/approve")
-def approve_search_plan(plan_id: str) -> JSONResponse:
-    return _to_http(get_search_plan_handler().approve_plan(plan_id))
+def approve_search_plan(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
+    return _to_http(get_search_plan_handler().approve_plan(plan_id, request.reason))
 
 
 @router.post("/search-plans/{plan_id}/reject")
 def reject_search_plan(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().reject_plan(plan_id, request.reason))
+
+
+@router.post("/search-results/{result_id}/approve")
+def approve_search_result(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
+    return _to_http(get_search_plan_handler().review_result(result_id, True, request.reason))
+
+
+@router.post("/search-results/{result_id}/reject")
+def reject_search_result(result_id: str, request: ReviewSearchResultRequest) -> JSONResponse:
+    return _to_http(get_search_plan_handler().review_result(result_id, False, request.reason))
 
 
 @router.post("/search-plans/bulk")
