@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Thread
 
 from core.settings import get_settings
 from dal.local.sqlite_adapter import LocalSQLiteAdapter
@@ -107,23 +108,48 @@ class SearchPlanHandler:
                     source_type="groq",
                     video_source_id=payload.get("video_source_id") or self._ensure_default_source(conn),
                 )
-                plan = self.service.run_search(conn, plan_id=plan["id"])
+                conn.execute(
+                    "UPDATE search_plans SET status = 'running', updated_at = ? WHERE id = ?",
+                    (self.sqlite_adapter.utc_now_iso(), plan["id"]),
+                )
+                self.sqlite_adapter.append_event(
+                    conn,
+                    event_type="search_plan.run.queued",
+                    aggregate_type="search_plan",
+                    aggregate_id=plan["id"],
+                    payload={"search_plan_id": plan["id"], "mode": "automatic"},
+                )
             except ValueError as exc:
                 return PresentationResponseDTO(status_code=400, message=str(exc), data=None)
 
+        Thread(target=self._run_plan_async, args=(plan["id"],), daemon=True).start()
         return PresentationResponseDTO(
             status_code=202,
             message="Automatic search started with AI-generated keywords.",
-            data=plan,
+            data={"plan_id": plan["id"]},
         )
 
     def run_plan(self, plan_id: str) -> PresentationResponseDTO:
         with self.sqlite_adapter.connect() as conn:
             self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
-            plan = self.service.run_search(conn, plan_id=plan_id)
-        if not plan:
-            return PresentationResponseDTO(status_code=404, message="Search plan not found.", data=None)
-        return PresentationResponseDTO(status_code=202, message="Search plan execution completed.", data=plan)
+            plan = self.service.get_plan(conn, plan_id)
+            if not plan:
+                return PresentationResponseDTO(status_code=404, message="Search plan not found.", data=None)
+
+            conn.execute(
+                "UPDATE search_plans SET status = 'running', updated_at = ? WHERE id = ?",
+                (self.sqlite_adapter.utc_now_iso(), plan_id),
+            )
+            self.sqlite_adapter.append_event(
+                conn,
+                event_type="search_plan.run.queued",
+                aggregate_type="search_plan",
+                aggregate_id=plan_id,
+                payload={"search_plan_id": plan_id},
+            )
+
+        Thread(target=self._run_plan_async, args=(plan_id,), daemon=True).start()
+        return PresentationResponseDTO(status_code=202, message="Search plan execution started asynchronously.", data={"plan_id": plan_id})
 
     def list_plans(self) -> PresentationResponseDTO:
         with self.sqlite_adapter.connect() as conn:
@@ -171,6 +197,21 @@ class SearchPlanHandler:
         if not result:
             return PresentationResponseDTO(status_code=404, message="Search result not found.", data=None)
         return PresentationResponseDTO(status_code=200, message="Search result reviewed.", data=result)
+
+    def _run_plan_async(self, plan_id: str) -> None:
+        with self.sqlite_adapter.connect() as conn:
+            self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
+
+            def _emit(progress: dict) -> None:
+                self.sqlite_adapter.append_event(
+                    conn,
+                    event_type=f"search_plan.run.{progress.get('stage', 'progress')}",
+                    aggregate_type="search_plan",
+                    aggregate_id=plan_id,
+                    payload=progress,
+                )
+
+            self.service.run_search(conn, plan_id=plan_id, auto_enqueue=True, progress_callback=_emit)
 
     def _ensure_default_source(self, conn) -> str:
         row = conn.execute("SELECT id FROM video_sources WHERE is_enabled = 1 ORDER BY created_at ASC LIMIT 1").fetchone()

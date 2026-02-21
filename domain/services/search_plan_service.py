@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from typing import Any, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 from core.settings import Settings
 from dal.local.sqlite_adapter import LocalSQLiteAdapter
@@ -69,7 +69,14 @@ class SearchPlanService:
             self.sqlite_adapter.add_search_keyword(conn, plan["id"], keyword, is_negative=True)
         return self.get_plan(conn, plan["id"]) or plan
 
-    def run_search(self, conn: sqlite3.Connection, *, plan_id: str) -> dict[str, Any] | None:
+    def run_search(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        plan_id: str,
+        auto_enqueue: bool = False,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any] | None:
         plan = self.get_plan(conn, plan_id)
         if not plan:
             return None
@@ -83,13 +90,46 @@ class SearchPlanService:
             (self.sqlite_adapter.utc_now_iso(), plan_id),
         )
 
+        keywords = positive_keywords or [plan["query"]]
+        total_keywords = len(keywords)
+        total_found = 0
+        total_enqueued = 0
         rank = 1
-        for keyword in positive_keywords or [plan["query"]]:
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "started",
+                    "search_plan_id": plan_id,
+                    "total_keywords": total_keywords,
+                    "processed_keywords": 0,
+                    "total_found": total_found,
+                    "total_enqueued": total_enqueued,
+                }
+            )
+
+        for index, keyword in enumerate(keywords, start=1):
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "keyword_started",
+                        "search_plan_id": plan_id,
+                        "keyword": keyword,
+                        "keyword_index": index,
+                        "total_keywords": total_keywords,
+                        "total_found": total_found,
+                        "total_enqueued": total_enqueued,
+                    }
+                )
+
+            keyword_found = 0
+            keyword_enqueued = 0
             query = f"{plan['query']} {keyword}".strip()
             for result in self.search_provider.search(query=query, keywords=[keyword]):
                 if self._contains_any((result.get("title") or "") + " " + (result.get("channel_name") or ""), negative_keywords):
                     continue
-                self.sqlite_adapter.add_search_result(
+
+                saved_result = self.sqlite_adapter.add_search_result(
                     conn,
                     search_plan_id=plan_id,
                     source_video_id=result.get("source_video_id"),
@@ -101,11 +141,61 @@ class SearchPlanService:
                     query_keyword=keyword,
                 )
                 rank += 1
+                keyword_found += 1
+                total_found += 1
 
+                if auto_enqueue and plan.get("video_source_id"):
+                    queued = self.video_queue_service.enqueue(
+                        conn,
+                        video_source_id=plan["video_source_id"],
+                        title=saved_result.get("title"),
+                        source_url=saved_result.get("source_url"),
+                        source_video_id=saved_result.get("source_video_id"),
+                    )
+                    self.sqlite_adapter.update_search_result_status(
+                        conn,
+                        result_id=saved_result["id"],
+                        status="approved",
+                        reason="auto-approved during async run",
+                        ingested_video_id=queued["video"]["id"],
+                    )
+                    keyword_enqueued += 1
+                    total_enqueued += 1
+
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "keyword_completed",
+                        "search_plan_id": plan_id,
+                        "keyword": keyword,
+                        "keyword_index": index,
+                        "total_keywords": total_keywords,
+                        "keyword_found": keyword_found,
+                        "keyword_enqueued": keyword_enqueued,
+                        "total_found": total_found,
+                        "total_enqueued": total_enqueued,
+                        "progress_percent": int((index / total_keywords) * 100),
+                    }
+                )
+
+        next_status = "approved" if auto_enqueue else "review_pending"
         conn.execute(
-            "UPDATE search_plans SET status = 'review_pending', updated_at = ? WHERE id = ?",
-            (self.sqlite_adapter.utc_now_iso(), plan_id),
+            "UPDATE search_plans SET status = ?, updated_at = ? WHERE id = ?",
+            (next_status, self.sqlite_adapter.utc_now_iso(), plan_id),
         )
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "completed",
+                    "search_plan_id": plan_id,
+                    "total_keywords": total_keywords,
+                    "processed_keywords": total_keywords,
+                    "total_found": total_found,
+                    "total_enqueued": total_enqueued,
+                    "progress_percent": 100,
+                }
+            )
         return self.get_plan(conn, plan_id)
 
     def review_result(
