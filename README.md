@@ -29,3 +29,16 @@ git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':(exclude).venv/**'
 ```
 
 Isso normalmente elimina o botão de conflito no PR e evita ter que resolver no editor web.
+
+## Verificação rápida pós-merge
+
+Para evitar subir conflitos residuais (ex: `<<<<<<< HEAD`) ou erros de sintaxe após resolver merge/rebase, rode:
+
+```bash
+./scripts/verify_merge_integrity.sh
+```
+
+Esse script valida:
+- marcadores de conflito em arquivos rastreados pelo git,
+- sintaxe de todos os arquivos Python versionados no repositório.
+

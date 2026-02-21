@@ -8,17 +8,6 @@ from starlette.responses import JSONResponse
 
 from presentation.handlers.response_dto import PresentationResponseDTO
 from presentation.handlers.search_handler import SearchPlanHandler
-from presentation.handlers.search_handler import (
-    approve_plan,
-    bulk_action,
-    create_plan,
-    get_plan,
-    get_plan_results,
-    list_plans,
-    reject_plan,
-    review_result,
-    run_plan,
-)
 
 router = APIRouter(tags=["search-plans"])
 
@@ -56,8 +45,6 @@ def _to_http(response_dto: PresentationResponseDTO) -> JSONResponse:
 @router.post("/search-plans")
 def create_search_plan_route(request: CreateSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().create_plan(request.model_dump()))
-    return _to_http(create_plan(request.model_dump()))
-
 
 
 @router.post("/search-plans/{plan_id}/run")
@@ -83,8 +70,6 @@ def get_search_plan_results_route(plan_id: str) -> JSONResponse:
 @router.post("/search-plans/{plan_id}/approve")
 def approve_search_plan_route(plan_id: str, request: RejectSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().approve_plan(plan_id, request.reason))
-    return _to_http(approve_plan(plan_id, request.reason))
-
 
 
 @router.post("/search-plans/{plan_id}/reject")
