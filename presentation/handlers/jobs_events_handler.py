@@ -13,7 +13,7 @@ _EVENTS = [
 ]
 
 
-def get_active_jobs() -> PresentationResponseDTO:
+def get_active_jobs(self) -> PresentationResponseDTO:
     return PresentationResponseDTO(
         status_code=200,
         message="Active jobs fetched successfully.",
@@ -21,7 +21,7 @@ def get_active_jobs() -> PresentationResponseDTO:
     )
 
 
-def tail_events(limit: int) -> PresentationResponseDTO:
+def tail_events(self, limit: int) -> PresentationResponseDTO:
     return PresentationResponseDTO(
         status_code=200,
         message="Event tail fetched successfully.",
