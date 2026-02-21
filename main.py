@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from core.settings import get_settings
@@ -19,6 +22,14 @@ def create_app() -> FastAPI:
     app.include_router(video_queue_router)
     app.include_router(jobs_events_router)
     app.include_router(search_plans_router)
+
+    web_root = Path(__file__).resolve().parent / "presentation" / "web"
+    app.mount("/web", StaticFiles(directory=str(web_root), html=True), name="web")
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse(url="/web/pages/video-downloads-dashboard/index.html")
+
     return app
 
 
