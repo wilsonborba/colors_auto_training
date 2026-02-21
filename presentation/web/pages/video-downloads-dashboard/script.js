@@ -1,72 +1,81 @@
-const downloads = [
-  { id: "v-104", title: "How to Build Healthy Habits", priority: 2, status: "Queued", progress: 0 },
-  { id: "v-211", title: "Street Food Stories: Seoul", priority: 1, status: "Downloading", progress: 43 },
-  { id: "v-315", title: "Ocean Documentary Episode 4", priority: 3, status: "Failed", progress: 65 }
-];
-
 const tbody = document.getElementById("downloads-tbody");
 
 function statusClass(status) {
-  if (status === "Downloading") return "state-info";
-  if (status === "Completed") return "state-success";
-  if (status === "Failed") return "state-danger";
+  if (status === "downloaded") return "state-success";
+  if (status === "failed") return "state-danger";
+  if (status === "downloading") return "state-info";
   return "state-warning";
 }
 
-function render() {
-  tbody.innerHTML = downloads
-    .sort((a, b) => a.priority - b.priority)
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.message || "request failed");
+  return payload.data;
+}
+
+function render(videos) {
+  tbody.innerHTML = videos
     .map(
       (item) => `
         <tr>
-          <td>${item.title}</td>
+          <td>${item.title || item.source_video_id || item.id}</td>
           <td>
             <div class="priority-controls">
               <button class="button" onclick="changePriority('${item.id}', -1)">↑</button>
-              <span>${item.priority}</span>
+              <span>${item.priority ?? 0}</span>
               <button class="button" onclick="changePriority('${item.id}', 1)">↓</button>
             </div>
           </td>
           <td><span class="chip ${statusClass(item.status)}">${item.status}</span></td>
-          <td>
-            <div class="progress-wrap">
-              <progress max="100" value="${item.progress}"></progress>
-              <small>${item.progress}%</small>
-            </div>
-          </td>
+          <td>${item.source_url || "-"}</td>
           <td>
             <div class="row-actions">
               <button class="button" onclick="retry('${item.id}')">Retry</button>
-              <button class="button" onclick="toggleEnabled('${item.id}')">${item.disabled ? "Enable" : "Disable"}</button>
+              <button class="button" onclick="toggleEnabled('${item.id}', ${item.is_enabled ? 1 : 0})">${item.is_enabled ? "Disable" : "Enable"}</button>
             </div>
           </td>
         </tr>
-      `
+      `,
     )
     .join("");
 }
 
-function changePriority(id, delta) {
-  const item = downloads.find((d) => d.id === id);
-  if (!item) return;
-  item.priority = Math.max(1, item.priority + delta);
-  render();
+async function loadVideos() {
+  const videos = await api("/videos");
+  render(videos);
 }
 
-function retry(id) {
-  const item = downloads.find((d) => d.id === id);
+async function changePriority(id, delta) {
+  const videos = await api("/videos");
+  const item = videos.find((video) => video.id === id);
   if (!item) return;
-  item.status = "Downloading";
-  item.progress = 10;
-  render();
+  const nextPriority = Math.max(0, Number(item.priority || 0) + delta);
+  await api(`/videos/${id}/priority`, {
+    method: "POST",
+    body: JSON.stringify({ priority: nextPriority }),
+  });
+  await loadVideos();
 }
 
-function toggleEnabled(id) {
-  const item = downloads.find((d) => d.id === id);
-  if (!item) return;
-  item.disabled = !item.disabled;
-  item.status = item.disabled ? "Queued" : "Downloading";
-  render();
+async function retry(id) {
+  await api(`/videos/${id}/retry`, { method: "POST" });
+  await loadVideos();
 }
 
-render();
+async function toggleEnabled(id, enabled) {
+  const path = enabled ? `/videos/${id}/disable` : `/videos/${id}/enable`;
+  await api(path, { method: "POST" });
+  await loadVideos();
+}
+
+window.changePriority = changePriority;
+window.retry = retry;
+window.toggleEnabled = toggleEnabled;
+
+loadVideos().catch((err) => {
+  tbody.innerHTML = `<tr><td colspan="5">Erro ao carregar: ${err.message}</td></tr>`;
+});
