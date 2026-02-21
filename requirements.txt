@@ -5,3 +5,6 @@ gdown
 Pillow
 opencv-python
 numpy
+pydantic
+pydantic-settings
+fastapi
