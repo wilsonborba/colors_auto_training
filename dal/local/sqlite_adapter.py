@@ -387,28 +387,41 @@ class LocalSQLiteAdapter:
         return self.get_job(conn, job_id)
 
     # --- Search plans and results ---
-    def create_search_plan(self, conn: sqlite3.Connection, query: str, video_source_id: str | None = None) -> dict[str, Any]:
+    def create_search_plan(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        video_source_id: str | None = None,
+        source_type: str = 'manual',
+    ) -> dict[str, Any]:
         plan_id = str(uuid.uuid4())
         now = self.utc_now_iso()
         conn.execute(
             """
-            INSERT INTO search_plans(id, video_source_id, query, status, created_at, updated_at)
-            VALUES (?, ?, ?, 'draft', ?, ?)
+            INSERT INTO search_plans(id, video_source_id, query, source_type, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'draft', ?, ?)
             """,
-            (plan_id, video_source_id, query, now, now),
+            (plan_id, video_source_id, query, source_type, now, now),
         )
         row = conn.execute("SELECT * FROM search_plans WHERE id = ?", (plan_id,)).fetchone()
         return dict(row)
 
-    def add_search_keyword(self, conn: sqlite3.Connection, search_plan_id: str, keyword: str, weight: float = 1.0) -> dict[str, Any]:
+    def add_search_keyword(
+        self,
+        conn: sqlite3.Connection,
+        search_plan_id: str,
+        keyword: str,
+        weight: float = 1.0,
+        is_negative: bool = False,
+    ) -> dict[str, Any]:
         keyword_id = str(uuid.uuid4())
         now = self.utc_now_iso()
         conn.execute(
             """
-            INSERT INTO search_plan_keywords(id, search_plan_id, keyword, weight, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO search_plan_keywords(id, search_plan_id, keyword, weight, is_negative, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (keyword_id, search_plan_id, keyword, weight, now),
+            (keyword_id, search_plan_id, keyword, weight, int(is_negative), now),
         )
         row = conn.execute("SELECT * FROM search_plan_keywords WHERE id = ?", (keyword_id,)).fetchone()
         return dict(row)
@@ -424,6 +437,7 @@ class LocalSQLiteAdapter:
         channel_name: str | None,
         relevance_score: float | None,
         ranking: int | None,
+        query_keyword: str | None = None,
     ) -> dict[str, Any]:
         result_id = str(uuid.uuid4())
         now = self.utc_now_iso()
@@ -431,11 +445,11 @@ class LocalSQLiteAdapter:
             """
             INSERT INTO search_results(
                 id, search_plan_id, source_video_id, title, source_url, channel_name,
-                relevance_score, ranking, status, created_at, updated_at
+                relevance_score, ranking, query_keyword, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
-            (result_id, search_plan_id, source_video_id, title, source_url, channel_name, relevance_score, ranking, now, now),
+            (result_id, search_plan_id, source_video_id, title, source_url, channel_name, relevance_score, ranking, query_keyword, now, now),
         )
         row = conn.execute("SELECT * FROM search_results WHERE id = ?", (result_id,)).fetchone()
         return dict(row)
@@ -447,6 +461,33 @@ class LocalSQLiteAdapter:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def update_search_result_status(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        result_id: str,
+        status: str,
+        reason: str | None = None,
+        ingested_video_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        now = self.utc_now_iso()
+        conn.execute(
+            "UPDATE search_results SET status = ?, review_reason = ?, ingested_video_id = COALESCE(?, ingested_video_id), updated_at = ? WHERE id = ?",
+            (status, reason, ingested_video_id, now, result_id),
+        )
+        row = conn.execute("SELECT * FROM search_results WHERE id = ?", (result_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_search_plan_keywords(self, conn: sqlite3.Connection, search_plan_id: str) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            "SELECT * FROM search_plan_keywords WHERE search_plan_id = ? ORDER BY created_at ASC",
+            (search_plan_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_search_result(self, conn: sqlite3.Connection, result_id: str) -> dict[str, Any] | None:
+        row = conn.execute("SELECT * FROM search_results WHERE id = ?", (result_id,)).fetchone()
+        return dict(row) if row else None
     # --- Events (optional) ---
     def append_event(
         self,

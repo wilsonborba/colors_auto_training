@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     groq_api_key: str | None = Field(default=None)
     groq_model: str | None = Field(default=None)
     groq_base_url: str | None = Field(default=None)
+    groq_plan_generation_enabled: bool = Field(default=False)
+    groq_timeout_seconds: float = Field(default=20.0, gt=0)
 
     youtube_adapter_enabled: bool = Field(default=True)
     youtube_api_key: str | None = Field(default=None)
