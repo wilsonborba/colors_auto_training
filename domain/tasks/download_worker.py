@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+
+from core.logger import get_logger, with_ctx
 from typing import Any, Callable
 
 from dal.local.sqlite_adapter import LocalSQLiteAdapter
@@ -29,6 +31,7 @@ class DownloadWorker:
         self.worker_id = worker_id
         self.base_backoff_seconds = base_backoff_seconds
         self.max_backoff_seconds = max_backoff_seconds
+        self.logger = get_logger(__name__)
 
     def run_loop(
         self,
@@ -72,21 +75,28 @@ class DownloadWorker:
             self.sqlite_adapter.update_job_status(conn, job["id"], "failed", last_error="invalid_payload")
             return
 
+        conn.execute("UPDATE videos SET status = 'downloading', updated_at = ? WHERE id = ?", (self.sqlite_adapter.utc_now_iso(), video_id))
+
         self.event_service.append_event(
             conn,
-            event_type="job.started",
+            event_type="download_started",
             aggregate_type="job",
             aggregate_id=job["id"],
-            payload={"job_type": job["job_type"], "video_id": video_id},
+            entity_type="video",
+            entity_id=video_id,
+            payload={"job_type": job["job_type"], "video_id": video_id, "job_id": job["id"]},
         )
+        self.logger.info("download started", extra={"ctx": with_ctx(job_id=job["id"], video_id=video_id)})
 
         def _progress(progress: dict[str, Any]) -> None:
             self.event_service.append_event(
                 conn,
-                event_type="download.progress",
+                event_type="download_progress",
                 aggregate_type="job",
                 aggregate_id=job["id"],
-                payload={"video_id": video_id, **progress},
+                entity_type="video",
+                entity_id=video_id,
+                payload={"video_id": video_id, "job_id": job["id"], **progress},
             )
             if on_progress:
                 on_progress(progress)
@@ -103,18 +113,22 @@ class DownloadWorker:
             )
             now = self.sqlite_adapter.utc_now_iso()
             conn.execute(
-                "UPDATE videos SET status = 'downloaded', updated_at = ? WHERE id = ?",
+                "UPDATE videos SET status = 'done', updated_at = ? WHERE id = ?",
                 (now, result.video["id"]),
             )
             self.sqlite_adapter.update_job_status(conn, job["id"], "completed")
             self.event_service.append_event(
                 conn,
-                event_type="job.completed",
+                event_type="download_finished",
                 aggregate_type="job",
                 aggregate_id=job["id"],
-                payload={"video_id": result.video["id"], "claimed": result.claimed},
+                entity_type="video",
+                entity_id=result.video["id"],
+                payload={"video_id": result.video["id"], "job_id": job["id"], "claimed": result.claimed},
             )
+            self.logger.info("download finished", extra={"ctx": with_ctx(job_id=job["id"], video_id=result.video["id"])})
         except DownloadError as exc:
+            self.logger.error("download failed", extra={"ctx": with_ctx(job_id=job["id"], video_id=video_id, reason=exc.code)})
             self._apply_retry(conn, job, video_id=video_id, reason_code=exc.code, message=exc.message)
 
     def _apply_retry(
@@ -136,10 +150,12 @@ class DownloadWorker:
         )
         self.event_service.append_event(
             conn,
-            event_type="job.failed",
+            event_type="download_failed",
             aggregate_type="job",
             aggregate_id=job["id"],
-            payload={"reason_code": reason_code, "message": message, "attempts": attempts, "max_attempts": max_attempts},
+            entity_type="video",
+            entity_id=video_id,
+            payload={"reason_code": reason_code, "message": message, "attempts": attempts, "max_attempts": max_attempts, "video_id": video_id, "job_id": job["id"]},
         )
 
         if attempts >= max_attempts:
@@ -169,8 +185,10 @@ class DownloadWorker:
         )
         self.event_service.append_event(
             conn,
-            event_type="job.retry_scheduled",
+            event_type="retry_scheduled",
             aggregate_type="job",
             aggregate_id=job["id"],
-            payload={"reason_code": reason_code, "run_after_at": run_after, "backoff_seconds": backoff_seconds},
+            entity_type="video",
+            entity_id=video_id,
+            payload={"reason_code": reason_code, "run_after_at": run_after, "backoff_seconds": backoff_seconds, "video_id": video_id, "job_id": job["id"]},
         )

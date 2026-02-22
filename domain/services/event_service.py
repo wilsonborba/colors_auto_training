@@ -21,6 +21,8 @@ class EventService:
         payload: dict[str, Any],
         aggregate_type: str | None = None,
         aggregate_id: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
     ) -> dict[str, Any]:
         return self.sqlite_adapter.append_event(
             conn,
@@ -28,6 +30,8 @@ class EventService:
             payload=payload,
             aggregate_type=aggregate_type,
             aggregate_id=aggregate_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
         )
 
     def tail_events(self, conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, Any]]:
@@ -41,4 +45,12 @@ class EventService:
                     "payload": json.loads(payload) if isinstance(payload, str) and payload else {},
                 }
             )
+        return hydrated
+
+    def tail_events_by_entity(self, conn: sqlite3.Connection, *, entity_type: str, entity_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        records = self.sqlite_adapter.tail_events_by_entity(conn, entity_type=entity_type, entity_id=entity_id, limit=limit)
+        hydrated = []
+        for event in records:
+            payload = event.get("payload_json")
+            hydrated.append({**event, "payload": json.loads(payload) if isinstance(payload, str) and payload else {}})
         return hydrated

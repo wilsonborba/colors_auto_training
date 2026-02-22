@@ -38,7 +38,7 @@ async function api(path, options = {}) {
 }
 
 async function loadPlans() {
-  const plans = await api("/search-plans");
+  const plans = await api("/search-plans?filter=active");
   renderPlans(plans);
   if (selectedPlanId) {
     await loadResults(selectedPlanId);
@@ -64,9 +64,9 @@ function renderPlans(plans) {
         ${renderProgress(plan.id)}
         <div class="plan-actions">
           <button class="button" onclick="runPlan('${plan.id}')">Run</button>
-          <button class="button" onclick="showResults('${plan.id}')">Review Results</button>
+          <button class="button" onclick="openPlanDetails('${plan.id}')">Plan Details</button><button class="button" onclick="showResults('${plan.id}')">Review Results</button>
           <button class="button" onclick="approvePlan('${plan.id}')">Approve Plan</button>
-          <button class="button" onclick="rejectPlan('${plan.id}')">Reject Plan</button>
+          <button class="button" onclick="rejectPlan('${plan.id}')">Reject Plan</button><button class="button" onclick="deletePlan('${plan.id}')">Delete Plan</button>
         </div>
       </li>
     `,
@@ -180,3 +180,10 @@ loadPlans().catch((err) => {
 setInterval(() => {
   syncProgress().catch(() => {});
 }, 2500);
+
+
+function openPlanDetails(id) { window.location.href = `/ui/search-plans/details?id=${id}`; }
+window.openPlanDetails = openPlanDetails;
+
+async function deletePlan(id) { if (!window.confirm("Delete this plan?")) return; await api(`/search-plans/${id}/delete`, { method: "POST" }); await loadPlans(); }
+window.deletePlan = deletePlan;
