@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plan Details</title>
+    <link rel="stylesheet" href="/web/shared/theme.css" />
+    <link rel="stylesheet" href="/web/pages/search-plan-details/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <a class="button" href="/ui/search-plans">← Back to plans</a>
+      <section class="card" id="header"></section>
+      <section class="grid">
+        <div class="card"><h3>Keywords</h3><div id="keywords"></div></div>
+        <div class="card"><h3>Execution</h3><div id="execution"></div></div>
+      </section>
+      <section class="card"><h3>Results</h3><div><button class="button" onclick="bulkReview(true)">Bulk Approve</button> <button class="button" onclick="bulkReview(false)">Bulk Reject</button></div><div id="results"></div></section>
+      <section class="card"><h3>Events</h3><ul id="events" class="events"></ul></section>
+    </main>
+    <script src="/web/pages/search-plan-details/script.js"></script>
+  </body>
+</html>

@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     youtube_base_url: str | None = Field(default=None)
     youtube_timeout_seconds: float = Field(default=30.0, gt=0)
 
+    log_level: str = Field(default="INFO")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -497,22 +497,41 @@ class LocalSQLiteAdapter:
         payload: dict[str, Any],
         aggregate_type: str | None = None,
         aggregate_id: str | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
     ) -> dict[str, Any]:
         event_id = str(uuid.uuid4())
         now = self.utc_now_iso()
         conn.execute(
             """
-            INSERT INTO events(id, event_type, aggregate_type, aggregate_id, payload_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO events(id, event_type, aggregate_type, aggregate_id, entity_type, entity_id, payload_json, created_at, ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (event_id, event_type, aggregate_type, aggregate_id, json.dumps(payload), now),
+            (
+                event_id,
+                event_type,
+                aggregate_type,
+                aggregate_id,
+                entity_type or aggregate_type,
+                entity_id or aggregate_id,
+                json.dumps(payload),
+                now,
+                now,
+            ),
         )
         row = conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
         return dict(row)
 
     def tail_events(self, conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, Any]]:
         rows = conn.execute(
-            "SELECT * FROM events ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM events ORDER BY ts DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def tail_events_by_entity(self, conn: sqlite3.Connection, *, entity_type: str, entity_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            "SELECT * FROM events WHERE entity_type = ? AND entity_id = ? ORDER BY ts DESC LIMIT ?",
+            (entity_type, entity_id, limit),
         ).fetchall()
         return [dict(row) for row in rows]

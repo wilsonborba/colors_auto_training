@@ -36,6 +36,16 @@ class JobsEventsHandler:
                 events.append({**row, "payload": json.loads(payload) if payload else {}})
         return PresentationResponseDTO(status_code=200, message="Event tail fetched successfully.", data=events)
 
+    def tail_video_events(self, video_id: str, limit: int) -> PresentationResponseDTO:
+        with self.sqlite_adapter.connect() as conn:
+            self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
+            rows = self.sqlite_adapter.tail_events_by_entity(conn, entity_type="video", entity_id=video_id, limit=limit)
+            events = []
+            for row in rows:
+                payload = row.get("payload_json")
+                events.append({**row, "payload": json.loads(payload) if payload else {}})
+        return PresentationResponseDTO(status_code=200, message="Video events fetched successfully.", data=events)
+
 
 _HANDLER = JobsEventsHandler()
 
@@ -46,3 +56,7 @@ def get_active_jobs() -> PresentationResponseDTO:
 
 def tail_events(limit: int) -> PresentationResponseDTO:
     return _HANDLER.tail_events(limit)
+
+
+def tail_video_events(video_id: str, limit: int) -> PresentationResponseDTO:
+    return _HANDLER.tail_video_events(video_id, limit)

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import traceback
 from typing import Any, Callable, Iterable, Protocol
 
+from core.logger import get_logger, with_ctx
 from core.settings import Settings
 from dal.local.sqlite_adapter import LocalSQLiteAdapter
 from dal.remote.groq_adapter import GroqKeywordPlanner
+from domain.services.event_service import EventService
 from domain.services.video_queue_service import VideoQueueService
 
 
@@ -33,7 +36,9 @@ class SearchPlanService:
         self.search_provider = search_provider
         self.video_queue_service = video_queue_service
         self.settings = settings
+        self.event_service = EventService(sqlite_adapter)
         self.groq_planner = self._build_groq_planner(settings)
+        self.logger = get_logger(__name__)
 
     def create_plan(
         self,
@@ -84,14 +89,38 @@ class SearchPlanService:
         keywords_payload = self.sqlite_adapter.list_search_plan_keywords(conn, plan_id)
         positive_keywords = [item["keyword"] for item in keywords_payload if not item.get("is_negative")]
         negative_keywords = [item["keyword"] for item in keywords_payload if item.get("is_negative")]
-
-        conn.execute(
-            "UPDATE search_plans SET status = 'running', updated_at = ? WHERE id = ?",
-            (self.sqlite_adapter.utc_now_iso(), plan_id),
-        )
-
         keywords = positive_keywords or [plan["query"]]
         total_keywords = len(keywords)
+
+        now = self.sqlite_adapter.utc_now_iso()
+        conn.execute(
+            """
+            UPDATE search_plans
+            SET status = 'running',
+                total_keywords = ?,
+                current_keyword_index = 0,
+                current_keyword_text = NULL,
+                started_at = COALESCE(started_at, ?),
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (total_keywords, now, now, plan_id),
+        )
+
+        self.event_service.append_event(
+            conn,
+            event_type="plan_run_started",
+            entity_type="plan",
+            entity_id=plan_id,
+            aggregate_type="search_plan",
+            aggregate_id=plan_id,
+            payload={"search_plan_id": plan_id, "total_keywords": total_keywords},
+        )
+        self.logger.info(
+            "search plan execution started",
+            extra={"ctx": with_ctx(plan_id=plan_id, total_keywords=total_keywords)},
+        )
+
         total_found = 0
         total_enqueued = 0
         rank = 1
@@ -108,95 +137,169 @@ class SearchPlanService:
                 }
             )
 
-        for index, keyword in enumerate(keywords, start=1):
-            if progress_callback:
-                progress_callback(
-                    {
-                        "stage": "keyword_started",
-                        "search_plan_id": plan_id,
-                        "keyword": keyword,
-                        "keyword_index": index,
-                        "total_keywords": total_keywords,
-                        "total_found": total_found,
-                        "total_enqueued": total_enqueued,
-                    }
+        try:
+            for index, keyword in enumerate(keywords, start=1):
+                conn.execute(
+                    "UPDATE search_plans SET current_keyword_index = ?, current_keyword_text = ?, updated_at = ? WHERE id = ?",
+                    (index, keyword, self.sqlite_adapter.utc_now_iso(), plan_id),
                 )
-
-            keyword_found = 0
-            keyword_enqueued = 0
-            query = f"{plan['query']} {keyword}".strip()
-            for result in self.search_provider.search(query=query, keywords=[keyword]):
-                if self._contains_any((result.get("title") or "") + " " + (result.get("channel_name") or ""), negative_keywords):
-                    continue
-
-                saved_result = self.sqlite_adapter.add_search_result(
+                self.event_service.append_event(
                     conn,
-                    search_plan_id=plan_id,
-                    source_video_id=result.get("source_video_id"),
-                    title=result.get("title"),
-                    source_url=result.get("source_url"),
-                    channel_name=result.get("channel_name"),
-                    relevance_score=result.get("relevance_score"),
-                    ranking=result.get("ranking") or rank,
-                    query_keyword=keyword,
+                    event_type="keyword_started",
+                    entity_type="plan",
+                    entity_id=plan_id,
+                    aggregate_type="search_plan",
+                    aggregate_id=plan_id,
+                    payload={"search_plan_id": plan_id, "keyword": keyword, "index": index, "total": total_keywords},
                 )
-                rank += 1
-                keyword_found += 1
-                total_found += 1
+                self.logger.info(
+                    "keyword started",
+                    extra={"ctx": with_ctx(plan_id=plan_id, keyword=keyword, k=index, total=total_keywords)},
+                )
 
-                if auto_enqueue and plan.get("video_source_id"):
-                    queued = self.video_queue_service.enqueue(
-                        conn,
-                        video_source_id=plan["video_source_id"],
-                        title=saved_result.get("title"),
-                        source_url=saved_result.get("source_url"),
-                        source_video_id=saved_result.get("source_video_id"),
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "stage": "keyword_started",
+                            "search_plan_id": plan_id,
+                            "keyword": keyword,
+                            "keyword_index": index,
+                            "total_keywords": total_keywords,
+                            "total_found": total_found,
+                            "total_enqueued": total_enqueued,
+                        }
                     )
-                    self.sqlite_adapter.update_search_result_status(
-                        conn,
-                        result_id=saved_result["id"],
-                        status="approved",
-                        reason="auto-approved during async run",
-                        ingested_video_id=queued["video"]["id"],
-                    )
-                    keyword_enqueued += 1
-                    total_enqueued += 1
 
-            if progress_callback:
-                progress_callback(
-                    {
-                        "stage": "keyword_completed",
+                keyword_found = 0
+                keyword_enqueued = 0
+                query = f"{plan['query']} {keyword}".strip()
+                try:
+                    for result in self.search_provider.search(query=query, keywords=[keyword]):
+                        if self._contains_any((result.get("title") or "") + " " + (result.get("channel_name") or ""), negative_keywords):
+                            continue
+
+                        saved_result = self.sqlite_adapter.add_search_result(
+                            conn,
+                            search_plan_id=plan_id,
+                            source_video_id=result.get("source_video_id"),
+                            title=result.get("title"),
+                            source_url=result.get("source_url"),
+                            channel_name=result.get("channel_name"),
+                            relevance_score=result.get("relevance_score"),
+                            ranking=result.get("ranking") or rank,
+                            query_keyword=keyword,
+                        )
+                        self.event_service.append_event(
+                            conn,
+                            event_type="result_saved",
+                            entity_type="plan",
+                            entity_id=plan_id,
+                            aggregate_type="search_result",
+                            aggregate_id=saved_result["id"],
+                            payload={"search_plan_id": plan_id, "result_id": saved_result["id"], "keyword": keyword},
+                        )
+                        rank += 1
+                        keyword_found += 1
+                        total_found += 1
+
+                        if auto_enqueue and plan.get("video_source_id"):
+                            queued = self.video_queue_service.enqueue(
+                                conn,
+                                video_source_id=plan["video_source_id"],
+                                title=saved_result.get("title"),
+                                source_url=saved_result.get("source_url"),
+                                source_video_id=saved_result.get("source_video_id"),
+                            )
+                            self.sqlite_adapter.update_search_result_status(
+                                conn,
+                                result_id=saved_result["id"],
+                                status="approved",
+                                reason="auto-approved during async run",
+                                ingested_video_id=queued["video"]["id"],
+                            )
+                            keyword_enqueued += 1
+                            total_enqueued += 1
+                except Exception as keyword_exc:
+                    detail = traceback.format_exc()
+                    self.logger.error(
+                        "keyword failed",
+                        extra={"ctx": with_ctx(plan_id=plan_id, keyword=keyword, k=index, total=total_keywords)},
+                    )
+                    self.logger.error(detail, extra={"ctx": with_ctx(plan_id=plan_id)})
+                    self.event_service.append_event(
+                        conn,
+                        event_type="search_failed",
+                        entity_type="plan",
+                        entity_id=plan_id,
+                        aggregate_type="search_plan",
+                        aggregate_id=plan_id,
+                        payload={"search_plan_id": plan_id, "keyword": keyword, "index": index, "total": total_keywords, "error": str(keyword_exc), "stack_trace": detail},
+                    )
+                    conn.execute(
+                        "UPDATE search_plans SET status = 'failed', updated_at = ? WHERE id = ?",
+                        (self.sqlite_adapter.utc_now_iso(), plan_id),
+                    )
+                    raise
+
+                self.event_service.append_event(
+                    conn,
+                    event_type="keyword_finished",
+                    entity_type="plan",
+                    entity_id=plan_id,
+                    aggregate_type="search_plan",
+                    aggregate_id=plan_id,
+                    payload={
                         "search_plan_id": plan_id,
                         "keyword": keyword,
-                        "keyword_index": index,
-                        "total_keywords": total_keywords,
+                        "index": index,
+                        "total": total_keywords,
                         "keyword_found": keyword_found,
                         "keyword_enqueued": keyword_enqueued,
-                        "total_found": total_found,
-                        "total_enqueued": total_enqueued,
-                        "progress_percent": int((index / total_keywords) * 100),
-                    }
+                    },
+                )
+                self.logger.info(
+                    "keyword finished",
+                    extra={"ctx": with_ctx(plan_id=plan_id, keyword=keyword, k=index, total=total_keywords, found=keyword_found)},
                 )
 
-        next_status = "approved" if auto_enqueue else "review_pending"
-        conn.execute(
-            "UPDATE search_plans SET status = ?, updated_at = ? WHERE id = ?",
-            (next_status, self.sqlite_adapter.utc_now_iso(), plan_id),
-        )
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "stage": "keyword_completed",
+                            "search_plan_id": plan_id,
+                            "keyword": keyword,
+                            "keyword_index": index,
+                            "total_keywords": total_keywords,
+                            "keyword_found": keyword_found,
+                            "keyword_enqueued": keyword_enqueued,
+                            "total_found": total_found,
+                            "total_enqueued": total_enqueued,
+                            "progress_percent": int((index / total_keywords) * 100),
+                        }
+                    )
 
-        if progress_callback:
-            progress_callback(
-                {
-                    "stage": "completed",
-                    "search_plan_id": plan_id,
-                    "total_keywords": total_keywords,
-                    "processed_keywords": total_keywords,
-                    "total_found": total_found,
-                    "total_enqueued": total_enqueued,
-                    "progress_percent": 100,
-                }
+            next_status = "approved" if auto_enqueue else "done"
+            conn.execute(
+                "UPDATE search_plans SET status = ?, current_keyword_index = ?, updated_at = ? WHERE id = ?",
+                (next_status, total_keywords, self.sqlite_adapter.utc_now_iso(), plan_id),
             )
-        return self.get_plan(conn, plan_id)
+            self.logger.info("search plan execution finished", extra={"ctx": with_ctx(plan_id=plan_id, found=total_found, enqueued=total_enqueued)})
+
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "completed",
+                        "search_plan_id": plan_id,
+                        "total_keywords": total_keywords,
+                        "processed_keywords": total_keywords,
+                        "total_found": total_found,
+                        "total_enqueued": total_enqueued,
+                        "progress_percent": 100,
+                    }
+                )
+            return self.get_plan(conn, plan_id)
+        except Exception:
+            raise
 
     def review_result(
         self,
@@ -236,7 +339,7 @@ class SearchPlanService:
                 )
                 updated = self.sqlite_adapter.get_search_result(conn, result_id)
 
-        self.sqlite_adapter.append_event(
+        self.event_service.append_event(
             conn,
             event_type="search_result.reviewed",
             aggregate_type="search_result",
@@ -265,8 +368,20 @@ class SearchPlanService:
             )
         return self.get_plan(conn, plan_id)
 
+
+    def delete_plan(self, conn: sqlite3.Connection, plan_id: str) -> bool:
+        now = self.sqlite_adapter.utc_now_iso()
+        row = conn.execute("SELECT id FROM search_plans WHERE id = ?", (plan_id,)).fetchone()
+        if not row:
+            return False
+        conn.execute("UPDATE search_plans SET deleted_at = ?, updated_at = ? WHERE id = ?", (now, now, plan_id))
+        conn.execute("DELETE FROM search_results WHERE search_plan_id = ?", (plan_id,))
+        conn.execute("DELETE FROM search_plan_keywords WHERE search_plan_id = ?", (plan_id,))
+        self.event_service.append_event(conn, event_type="plan_deleted", entity_type="plan", entity_id=plan_id, aggregate_type="search_plan", aggregate_id=plan_id, payload={"search_plan_id": plan_id})
+        return True
+
     def get_plan(self, conn: sqlite3.Connection, plan_id: str) -> dict[str, Any] | None:
-        row = conn.execute("SELECT * FROM search_plans WHERE id = ?", (plan_id,)).fetchone()
+        row = conn.execute("SELECT * FROM search_plans WHERE id = ? AND deleted_at IS NULL", (plan_id,)).fetchone()
         if not row:
             return None
         plan = dict(row)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from threading import Thread
 
+from core.logger import get_logger, with_ctx
 from core.settings import get_settings
 from dal.local.sqlite_adapter import LocalSQLiteAdapter
 from dal.remote.youtube_adapter import YouTubeAdapterError, YouTubeRemoteAdapter
@@ -60,6 +61,7 @@ class SearchPlanHandler:
         self.settings = settings
         self.sqlite_adapter = LocalSQLiteAdapter(settings.db_path)
         self.search_provider = _YouTubeSearchProvider(YouTubeRemoteAdapter())
+        self.logger = get_logger(__name__)
         self.service = SearchPlanService(
             sqlite_adapter=self.sqlite_adapter,
             search_provider=self.search_provider,
@@ -118,6 +120,8 @@ class SearchPlanHandler:
                     aggregate_type="search_plan",
                     aggregate_id=plan["id"],
                     payload={"search_plan_id": plan["id"], "mode": "automatic"},
+                    entity_type="plan",
+                    entity_id=plan["id"],
                 )
             except ValueError as exc:
                 return PresentationResponseDTO(status_code=400, message=str(exc), data=None)
@@ -146,17 +150,22 @@ class SearchPlanHandler:
                 aggregate_type="search_plan",
                 aggregate_id=plan_id,
                 payload={"search_plan_id": plan_id},
+                    entity_type="plan",
+                    entity_id=plan_id,
             )
 
         Thread(target=self._run_plan_async, args=(plan_id,), daemon=True).start()
         return PresentationResponseDTO(status_code=202, message="Search plan execution started asynchronously.", data={"plan_id": plan_id})
 
-    def list_plans(self) -> PresentationResponseDTO:
+    def list_plans(self, only_active: bool = True) -> PresentationResponseDTO:
         with self.sqlite_adapter.connect() as conn:
             self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
-            rows = conn.execute("SELECT id FROM search_plans ORDER BY created_at DESC").fetchall()
+            rows = conn.execute("SELECT id FROM search_plans WHERE deleted_at IS NULL ORDER BY created_at DESC").fetchall()
             plans = [self.service.get_plan(conn, row["id"]) for row in rows]
-        return PresentationResponseDTO(status_code=200, message="Search plans fetched successfully.", data=[p for p in plans if p])
+        filtered = [p for p in plans if p]
+        if only_active:
+            filtered = [p for p in filtered if p.get("status") not in {"rejected"}]
+        return PresentationResponseDTO(status_code=200, message="Search plans fetched successfully.", data=filtered)
 
     def get_plan(self, plan_id: str) -> PresentationResponseDTO:
         with self.sqlite_adapter.connect() as conn:
@@ -190,6 +199,15 @@ class SearchPlanHandler:
             return PresentationResponseDTO(status_code=404, message="Search plan not found.", data=None)
         return PresentationResponseDTO(status_code=200, message="Search plan rejected.", data=plan)
 
+
+    def delete_plan(self, plan_id: str) -> PresentationResponseDTO:
+        with self.sqlite_adapter.connect() as conn:
+            self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
+            deleted = self.service.delete_plan(conn, plan_id)
+        if not deleted:
+            return PresentationResponseDTO(status_code=404, message="Search plan not found.", data=None)
+        return PresentationResponseDTO(status_code=200, message="Search plan deleted.", data={"plan_id": plan_id})
+
     def review_result(self, result_id: str, approved: bool, reason: str | None) -> PresentationResponseDTO:
         with self.sqlite_adapter.connect() as conn:
             self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
@@ -197,6 +215,15 @@ class SearchPlanHandler:
         if not result:
             return PresentationResponseDTO(status_code=404, message="Search result not found.", data=None)
         return PresentationResponseDTO(status_code=200, message="Search result reviewed.", data=result)
+
+
+    def bulk_review_results(self, plan_id: str, result_ids: list[str], approved: bool, reason: str | None) -> PresentationResponseDTO:
+        updated = []
+        for result_id in result_ids:
+            dto = self.review_result(result_id, approved, reason)
+            if dto.data:
+                updated.append(dto.data)
+        return PresentationResponseDTO(status_code=200, message="Bulk result review completed.", data={"updated_count": len(updated), "results": updated, "plan_id": plan_id})
 
     def _run_plan_async(self, plan_id: str) -> None:
         with self.sqlite_adapter.connect() as conn:
@@ -208,10 +235,26 @@ class SearchPlanHandler:
                     event_type=f"search_plan.run.{progress.get('stage', 'progress')}",
                     aggregate_type="search_plan",
                     aggregate_id=plan_id,
+                    entity_type="plan",
+                    entity_id=plan_id,
                     payload=progress,
                 )
 
-            self.service.run_search(conn, plan_id=plan_id, auto_enqueue=True, progress_callback=_emit)
+            try:
+                self.service.run_search(conn, plan_id=plan_id, auto_enqueue=True, progress_callback=_emit)
+            except Exception as exc:
+                self.logger.exception("run_plan_async failed", extra={"ctx": with_ctx(plan_id=plan_id, error=str(exc))})
+
+    def get_plan_events(self, plan_id: str, limit: int) -> PresentationResponseDTO:
+        with self.sqlite_adapter.connect() as conn:
+            self.sqlite_adapter.run_migrations(conn, "dal/local/migrations")
+            rows = self.sqlite_adapter.tail_events_by_entity(conn, entity_type="plan", entity_id=plan_id, limit=limit)
+        events = []
+        import json
+        for row in rows:
+            payload = row.get("payload_json")
+            events.append({**row, "payload": json.loads(payload) if payload else {}})
+        return PresentationResponseDTO(status_code=200, message="Search plan events fetched successfully.", data=events)
 
     def _ensure_default_source(self, conn) -> str:
         row = conn.execute("SELECT id FROM video_sources WHERE is_enabled = 1 ORDER BY created_at ASC LIMIT 1").fetchone()

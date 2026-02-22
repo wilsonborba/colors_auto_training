@@ -23,3 +23,8 @@ def search_plans_page() -> FileResponse:
 @router.get("/ui/video-downloads")
 def video_downloads_page() -> FileResponse:
     return FileResponse(_WEB_ROOT / "video-downloads-dashboard" / "index.html")
+
+
+@router.get("/ui/search-plans/details")
+def search_plan_details_page() -> FileResponse:
+    return FileResponse(_WEB_ROOT / "search-plan-details" / "index.html")

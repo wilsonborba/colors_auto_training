@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+
+from core.logger import get_logger, with_ctx
 from typing import Any
 
 from dal.local.sqlite_adapter import LocalSQLiteAdapter
@@ -11,6 +13,7 @@ class VideoQueueService:
 
     def __init__(self, sqlite_adapter: LocalSQLiteAdapter) -> None:
         self.sqlite_adapter = sqlite_adapter
+        self.logger = get_logger(__name__)
 
     def enqueue(
         self,
@@ -53,6 +56,16 @@ class VideoQueueService:
             },
             priority=priority,
         )
+        self.sqlite_adapter.append_event(
+            conn,
+            event_type="video_enqueued",
+            entity_type="video",
+            entity_id=video["id"],
+            aggregate_type="video",
+            aggregate_id=video["id"],
+            payload={"video_id": video["id"], "job_id": job["id"], "source_video_id": video.get("source_video_id")},
+        )
+        self.logger.info("video enqueued", extra={"ctx": with_ctx(video_id=video["id"], job_id=job["id"])})
         return {"video": video, "job": job}
 
     def reprioritize(self, conn: sqlite3.Connection, *, job_id: str, priority: int) -> dict[str, Any] | None:
@@ -84,6 +97,15 @@ class VideoQueueService:
             WHERE json_extract(payload_json, '$.video_id') = ?
             """,
             (reason, now, video_id),
+        )
+        self.sqlite_adapter.append_event(
+            conn,
+            event_type="retry_scheduled",
+            entity_type="video",
+            entity_id=video_id,
+            aggregate_type="video",
+            aggregate_id=video_id,
+            payload={"video_id": video_id, "reason": reason},
         )
         return self._get_video(conn, video_id)
 

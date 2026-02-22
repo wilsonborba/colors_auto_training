@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
@@ -39,6 +39,12 @@ class BulkSearchPlanRequest(BaseModel):
     action: str = Field(..., min_length=1)
 
 
+class BulkResultReviewRequest(BaseModel):
+    result_ids: list[str] = Field(default_factory=list)
+    approved: bool
+    reason: str | None = None
+
+
 @lru_cache(maxsize=1)
 def get_search_plan_handler() -> SearchPlanHandler:
     return SearchPlanHandler()
@@ -64,8 +70,8 @@ def auto_start_search_plan_route(request: StartAutomaticRequest) -> JSONResponse
 
 
 @router.get("/search-plans")
-def list_search_plans_route() -> JSONResponse:
-    return _to_http(get_search_plan_handler().list_plans())
+def list_search_plans_route(filter: str = Query(default="active", pattern="^(active|all)$")) -> JSONResponse:
+    return _to_http(get_search_plan_handler().list_plans(only_active=(filter == "active")))
 
 
 @router.get("/search-plans/{plan_id}")
@@ -101,3 +107,17 @@ def reject_search_result_route(result_id: str, request: ReviewSearchResultReques
 @router.post("/search-plans/bulk")
 def bulk_search_plan_action_route(request: BulkSearchPlanRequest) -> JSONResponse:
     return _to_http(get_search_plan_handler().bulk_action(request.plan_ids, request.action))
+
+@router.get("/search-plans/{plan_id}/events/tail")
+def get_search_plan_events_route(plan_id: str, limit: int = Query(default=50, ge=1, le=500)) -> JSONResponse:
+    return _to_http(get_search_plan_handler().get_plan_events(plan_id, limit))
+
+
+@router.post("/search-plans/{plan_id}/delete")
+def delete_search_plan_route(plan_id: str) -> JSONResponse:
+    return _to_http(get_search_plan_handler().delete_plan(plan_id))
+
+
+@router.post("/search-plans/{plan_id}/results/bulk")
+def bulk_review_results_route(plan_id: str, request: BulkResultReviewRequest) -> JSONResponse:
+    return _to_http(get_search_plan_handler().bulk_review_results(plan_id, request.result_ids, request.approved, request.reason))
