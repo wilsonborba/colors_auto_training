@@ -11,6 +11,8 @@ cd "$SCRIPT_DIR/.."
 
 source .venv/bin/activate
 
+cd "api"
+
 export PYTHONPATH="$(pwd)"
 
 HOST=${HOST:-0.0.0.0}

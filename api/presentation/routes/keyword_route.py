@@ -1,11 +1,14 @@
-from core.utils.responses import MyResponse
+from typing import Optional
+
+from core.logs import debug, error
+from core.utils.responses import MyResponse, MyResponseModel
 from fastapi import APIRouter, Body, Query, Request, Response, status
-from src.core.logs import debug, error
+from presentation.handlers.keyword_handler import create_keywords_handler
 
 keyword_router = APIRouter()
 
 
-@keyword_router.get("/keywords", response_model=MyResponse)
+@keyword_router.get("/keywords", response_model=MyResponseModel)
 async def get_keywords(
     request: Request,
     response: Response,
@@ -29,18 +32,22 @@ async def get_keywords(
         )
 
 
-@keyword_router.post("/keywords", response_model=MyResponse)
+@keyword_router.post("/keywords", response_model=MyResponseModel)
 async def create_keyword(
     request: Request,
     response: Response,
-    prompt: str = Body(..., description="Keyword to create"),
+    prompt: Optional[str] = Body(None, description="Prompt to generate keywords from"),
+    user_query: Optional[str] = Body(
+        None, description="User query to generate keywords from"
+    ),
 ):
     debug(f"Received request to create keyword: {prompt}")
 
     try:
-        # Here you would typically save the keyword to a database
+        keywords = create_keywords_handler(prompt=prompt, user_query=user_query)
+
         return MyResponse(
-            data={"keyword": prompt},
+            data=keywords,
             message="Keyword created successfully",
             status_code=status.HTTP_201_CREATED,
         )

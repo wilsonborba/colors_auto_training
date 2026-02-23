@@ -7,6 +7,7 @@
 - *(scripts)* Added initial esential scripts
 - *(models)* Created initial models for videos
 - *(routes)* Created a keywords routes
+- *(keywords)* First communication with groq api implemented
 
 ### 🐛 Bug Fixes
 

@@ -1,15 +1,9 @@
-import logging
-
 import inspect
+import logging
 from functools import partial
 
 from colorlog import ColoredFormatter
-
-
-from src.core.settings import app_settings
-
-
-
+from core.settings import app_settings
 
 # === Define log format and formatter ===
 LOG_FORMAT = "%(asctime)s [%(log_color)s%(levelname)s%(reset)s] %(message)s"
@@ -35,7 +29,6 @@ handler.setFormatter(formatter)
 # === Logger setup ===
 
 
-
 settings = app_settings()
 logger_level = logging.DEBUG if settings.development_mode else logging.INFO
 
@@ -45,6 +38,7 @@ logger.setLevel(logger_level)
 logger.addHandler(handler)
 
 logger.propagate = False  # Prevent duplicate logs
+
 
 # === Logging utility functions ===
 def log_message(level, message):
@@ -63,7 +57,6 @@ def log_message(level, message):
         formatted_message = f"[unknown location] {message}"
 
     logger.log(level, formatted_message)
-
 
 
 # === Partial logging shortcuts ===
