@@ -20,13 +20,17 @@ class IngestionService:
     ) -> GroqResponseSchema:
 
         if user_query is None:
-            user_query = "Find me videos that contain persons using clothes"
+            user_query = "List to me videos keywords that contain persons using clothes of diferent colors, but avoid irrelevant content."
 
         if prompt is None:
             prompt = (
                 "Return me a safe video search list as strict JSON only. "
-                'Schema: {"query": string, "keywords": string[], "negative_keywords": string[]}. '
-                "Include negative keywords to reduce irrelevant results. "
+                'Schema: {"query": string, "keywords": string[]'
+                "Keywords must be short search phrases of 1 to 3 words (not single broad terms unless necessary). "
+                "Prefer 2-3 word combinations that keep context (e.g., 'colorful outfit', 'colorful party people', 'brand new jackets', 'beautiful shirts'). "
+                "Generate many varied keywords (at least 20) and randomize them: mix colors, clothing items, and contexts, "
+                "but keep them relevant to people wearing clothes with different colors. "
+                "Avoid negative keywords to reduce irrelevant results. "
                 "Never create sexual, explicit, pornographic, child, toddler, kid, schoolgirl, teen, underage, or minors-focused intent. "
                 "If user input is unsafe, sanitize it to a benign alternative query."
             )

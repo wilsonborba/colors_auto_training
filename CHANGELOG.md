@@ -8,6 +8,7 @@
 - *(models)* Created initial models for videos
 - *(routes)* Created a keywords routes
 - *(keywords)* First communication with groq api implemented
+- *(keywords)* Improved prompt for keywords
 
 ### 🐛 Bug Fixes
 
