@@ -6,6 +6,7 @@
 - *(search-plans)* Add AI auto-start flow with seed keyword prompt
 - *(scripts)* Added initial esential scripts
 - *(models)* Created initial models for videos
+- *(routes)* Created a keywords routes
 
 ### 🐛 Bug Fixes
 

@@ -12,7 +12,7 @@ class VideoModel:
     id: UUID
     keyword_id: KeywordModel
     name: str
-
+    img_tumbnail: str
     created_at: str
     status: Status
     url_link: str
