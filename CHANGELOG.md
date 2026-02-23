@@ -22,3 +22,4 @@
 - *(env)* Fixed import errors
 - *(env)* Undone the messy project that codex did
 - *(env)* Added initial settings for project
+- *(env)* Adjusted for 2 different types of env
