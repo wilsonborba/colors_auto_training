@@ -13,7 +13,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import NoSuchTableError
-
 from src.core.logs import error
 from src.core.settings import app_settings
 

@@ -2,47 +2,28 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
-from urllib import error, request
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from core.utils.errors import GroqAdapterError
+from pydantic import ValidationError
 
-
-class GroqAdapterError(Exception):
-    pass
-
-
-class GroqDisabledError(GroqAdapterError):
-    pass
-
-
-class GroqResponseSchema(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    query: str = Field(min_length=1)
-    keywords: list[str] = Field(default_factory=list)
-    negative_keywords: list[str] = Field(default_factory=list)
+from api.domain.models.groq_api import GroqResponseSchema
 
 
 @dataclass(slots=True)
-class GroqKeywordPlanner:
+class GroqAPIClient:
     api_key: str
     model: str
     base_url: str = "https://api.groq.com/openai/v1"
     timeout_seconds: float = 20.0
 
-    def create_plan(self, user_query: str) -> GroqResponseSchema:
-        prompt = (
-            "Create a safe video search plan as strict JSON only. "
-            "Schema: {\"query\": string, \"keywords\": string[], \"negative_keywords\": string[]}. "
-            "Include negative keywords to reduce irrelevant results. "
-            "Never create sexual, explicit, pornographic, child, toddler, kid, schoolgirl, teen, underage, or minors-focused intent. "
-            "If user input is unsafe, sanitize it to a benign alternative query."
+    def query(self, user_query: str, prompt: str) -> GroqResponseSchema:
+
+        response_text = self._chat(
+            [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_query},
+            ]
         )
-        response_text = self._chat([
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": user_query},
-        ])
 
         try:
             payload = json.loads(response_text)
@@ -52,7 +33,9 @@ class GroqKeywordPlanner:
         try:
             return GroqResponseSchema.model_validate(payload)
         except ValidationError as exc:
-            raise GroqAdapterError(f"Groq response failed schema validation: {exc}") from exc
+            raise GroqAdapterError(
+                f"Groq response failed schema validation: {exc}"
+            ) from exc
 
     def _chat(self, messages: list[dict[str, str]]) -> str:
         url = f"{self.base_url.rstrip('/')}/chat/completions"
