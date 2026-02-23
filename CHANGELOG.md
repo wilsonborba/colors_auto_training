@@ -21,3 +21,4 @@
 - *(env)* Updated lib to run first try
 - *(env)* Fixed import errors
 - *(env)* Undone the messy project that codex did
+- *(env)* Added initial settings for project

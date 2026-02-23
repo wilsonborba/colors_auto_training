@@ -1,37 +1,27 @@
-from __future__ import annotations
-
-from pathlib import Path
-
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from src.core.settings import app_settings
+from src.presentation.routes.hello import hello_router
 
-from core.logger import configure_logging
-from core.settings import get_settings
-from presentation.routes.jobs_events import router as jobs_events_router
-from presentation.routes.search_plans import router as search_plans_router
-from presentation.routes.video_queue import router as video_queue_router
-from presentation.routes.web import router as web_router
+settings = app_settings()
 
 
-def create_app() -> FastAPI:
-    settings = get_settings()
-    configure_logging(settings.log_level)
-    app = FastAPI(title="colors_auto_training API")
-    app.state.settings = settings
-    app.mount("/web", StaticFiles(directory="presentation/web"), name="web")
-    app.include_router(web_router)
-    app.include_router(video_queue_router)
-    app.include_router(jobs_events_router)
-    app.include_router(search_plans_router)
-
-    web_root = Path(__file__).resolve().parent / "presentation" / "web"
-    app.mount("/web", StaticFiles(directory=str(web_root), html=True), name="web")
-
-    @app.get("/", include_in_schema=False)
-    def root() -> RedirectResponse:
-        return RedirectResponse(url="/web/pages/video-downloads-dashboard/index.html")
-
-    return app
+app = FastAPI(
+    root_path="/",
+    root_path_in_servers=False,
+    redirect_slashes=True,
+    title="Color Auto Training API",
+    description="API for Accredit application",
+    version="0.1.0",
+)
 
 
-app = create_app()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(hello_router, tags=["hello_router"])
