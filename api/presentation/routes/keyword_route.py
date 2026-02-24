@@ -40,11 +40,29 @@ async def create_keyword(
     user_query: Optional[str] = Body(
         None, description="User query to generate keywords from"
     ),
+    force_new_keywords: bool = Body(
+        False, description="Whether to force generation of new keywords from the prompt"
+    ),
+    limit: int = Body(20, description="Number of keywords to return"),
+    offset: int = Body(0, description="Offset for pagination"),
+    ordered_by: str = Body(
+        "created_at", description="Field to order keywords by (e.g., 'created_at')"
+    ),
+    videos_extracted: Optional[bool] = Body(
+        False, description="Whether to filter keywords by videos extracted status"
+    ),
 ):
     debug(f"Received request to create keyword: {prompt}")
 
     try:
-        keywords = create_keywords_handler(prompt=prompt, user_query=user_query)
+        keywords = create_keywords_handler(
+            prompt=prompt,
+            user_query=user_query,
+            force_new_keywords=force_new_keywords,
+            limit=limit,
+            offset=offset,
+            ordered_by=ordered_by,
+        )
 
         return MyResponse(
             data=keywords,

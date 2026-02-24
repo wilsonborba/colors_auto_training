@@ -19,6 +19,35 @@ class IngestionService:
         )
         self.db_adapter = DBAdapter()
 
+    def get_keywords_from_db(
+        self,
+        query_search: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+        videos_extracted: Optional[bool] = False,
+        ordered_by: str = "created_at",
+    ) -> list[str]:
+
+        filters = {}
+        if query_search:
+            filters["query_search"] = query_search
+        if videos_extracted is not None:
+            filters["videos_extracted"] = videos_extracted
+
+        try:
+            rows = self.db_adapter.read_where_many(
+                "keywords",
+                where=filters,
+                limit=limit,
+                offset=offset,
+                order_by=[ordered_by],
+            )
+            keywords = [row["key_name"] for row in rows]
+            return keywords
+        except Exception as e:
+            error(f"Error fetching keywords from DB: {e}")
+            return []
+
     def get_keywords_from_groq(
         self, user_query: Optional[str] = None, prompt: Optional[str] = None
     ) -> GroqResponseSchema:

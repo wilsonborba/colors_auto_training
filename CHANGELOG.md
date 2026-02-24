@@ -12,6 +12,7 @@
 - *(db)* Initial process of migration models started
 - *(db)* Migration script implemented
 - *(db)* Keywords saving by route
+- *(keywords)* Improved route query for keywords
 
 ### 🐛 Bug Fixes
 
