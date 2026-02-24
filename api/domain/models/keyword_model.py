@@ -7,6 +7,7 @@ class KeywordModel:
     id: UUID
     key_name: str
     created_at: str
+    videos_extracted: bool
 
     def to_dict(self):
         return asdict(self)

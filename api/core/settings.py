@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     @property
     def colors_auto_training_db(self) -> DatabaseConfig:
         return DatabaseConfig(
-            dialect="postgresql",
+            dialect="mysql",
             username=self.COLORS_DB_USER,
             password=self.COLORS_DB_PASSWORD,
             host=self.COLORS_DB_HOST,

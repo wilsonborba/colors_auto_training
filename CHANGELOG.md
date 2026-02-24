@@ -9,6 +9,7 @@
 - *(routes)* Created a keywords routes
 - *(keywords)* First communication with groq api implemented
 - *(keywords)* Improved prompt for keywords
+- *(db)* Initial process of migration models started
 
 ### 🐛 Bug Fixes
 
