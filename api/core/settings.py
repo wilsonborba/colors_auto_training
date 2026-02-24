@@ -24,18 +24,17 @@ class Settings(BaseSettings):
     COLORS_DB_HOST: str
     COLORS_DB_PORT: int
     COLORS_DB_NAME: str
-    COLORS_DB_SSLMODE: str = "require"  # Default to require SSL
 
     @property
     def colors_auto_training_db(self) -> DatabaseConfig:
         return DatabaseConfig(
-            dialect="mysql",
+            dialect="mysql+pymysql",
             username=self.COLORS_DB_USER,
             password=self.COLORS_DB_PASSWORD,
             host=self.COLORS_DB_HOST,
             port=self.COLORS_DB_PORT,
             database=self.COLORS_DB_NAME,
-            options={"sslmode": self.COLORS_DB_SSLMODE},
+            options={},
         )
 
     class Config:

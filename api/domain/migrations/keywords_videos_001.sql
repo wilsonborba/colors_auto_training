@@ -2,8 +2,9 @@
 
 -- 1) keywords
 CREATE TABLE IF NOT EXISTS keywords (
-  id               CHAR(36) NOT NULL PRIMARY KEY,
+  id               CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
   key_name         VARCHAR(255) NOT NULL,
+  query_search     TEXT NOT NULL,
   created_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   videos_extracted BOOLEAN NOT NULL DEFAULT FALSE
 ) ENGINE=InnoDB;

@@ -6,6 +6,7 @@ from uuid import UUID
 class KeywordModel:
     id: UUID
     key_name: str
+    query_search: str
     created_at: str
     videos_extracted: bool
 

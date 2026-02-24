@@ -5,40 +5,41 @@ MIGRATIONS_DIR="${MIGRATIONS_DIR:-api/domain/migrations}"
 MIGRATIONS_TABLE="${MIGRATIONS_TABLE:-schema_migrations}"
 ENV_FILE="${ENV_FILE:-.env}"
 
+FORCE=0
+
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/db_migrate.sh all
-  ./scripts/db_migrate.sh one <filename.sql>
-  ./scripts/db_migrate.sh status
-  ./scripts/db_migrate.sh list
+  ./scripts/db_migrate_mysql.sh all [--force]
+  ./scripts/db_migrate_mysql.sh one <filename.sql> [--force]
+  ./scripts/db_migrate_mysql.sh status
+  ./scripts/db_migrate_mysql.sh list
 
-Env (.env):
-  COLORS_DB_HOST
-  COLORS_DB_PORT
-  COLORS_DB_USER
-  COLORS_DB_PASSWORD
-  COLORS_DB_NAME
-
-Optional SSL:
-  COLORS_DB_SSL_CA   (path to CA pem, e.g. ./ca.pem)
-  COLORS_DB_SSL_MODE (VERIFY_CA, VERIFY_IDENTITY, REQUIRED)
-    - On older mysql clients, VERIFY_IDENTITY will degrade to VERIFY_CA behavior.
+Flags:
+  --force  Re-run migrations even if already applied.
 EOF
 }
 
+# ---- Parse args (allow --force anywhere) ----
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+set -- "${ARGS[@]}"
+
 # ---- Load .env ----
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-else
-  die "ENV file not found: $ENV_FILE"
-fi
+[[ -f "$ENV_FILE" ]] || die "ENV file not found: $ENV_FILE"
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
 
 : "${COLORS_DB_HOST:?Missing COLORS_DB_HOST}"
 : "${COLORS_DB_PORT:?Missing COLORS_DB_PORT}"
@@ -52,13 +53,11 @@ command -v mysql >/dev/null 2>&1 || die "mysql client not found in PATH"
 if [[ -z "${COLORS_DB_SSL_CA:-}" && -f "./ca.pem" ]]; then
   COLORS_DB_SSL_CA="./ca.pem"
 fi
-
-# If CA is present and ssl-mode not set, default to VERIFY_CA
 if [[ -n "${COLORS_DB_SSL_CA:-}" && -z "${COLORS_DB_SSL_MODE:-}" ]]; then
   COLORS_DB_SSL_MODE="VERIFY_CA"
 fi
 
-# ---- Base mysql args ----
+# ---- Base mysql args (quiet by default) ----
 MYSQL_BASE_ARGS=(
   "-h" "$COLORS_DB_HOST"
   "-P" "$COLORS_DB_PORT"
@@ -66,40 +65,29 @@ MYSQL_BASE_ARGS=(
   "--password=$COLORS_DB_PASSWORD"
   "$COLORS_DB_NAME"
   "--protocol=TCP"
-  "--batch" "--raw" "--silent"
+  "--batch" "--raw" "--silent" "--skip-column-names"
 )
 
 # ---- SSL args with feature detection ----
 MYSQL_SSL_ARGS=()
-
 MYSQL_HELP="$(mysql --help 2>/dev/null || true)"
 
-supports_ssl_mode() {
-  echo "$MYSQL_HELP" | grep -q -- '--ssl-mode'
-}
+supports_ssl_mode() { echo "$MYSQL_HELP" | grep -q -- '--ssl-mode'; }
+supports_verify_server_cert() { echo "$MYSQL_HELP" | grep -q -- '--ssl-verify-server-cert'; }
 
-supports_verify_server_cert() {
-  echo "$MYSQL_HELP" | grep -q -- '--ssl-verify-server-cert'
-}
-
-# Always include CA if provided
 if [[ -n "${COLORS_DB_SSL_CA:-}" ]]; then
   MYSQL_SSL_ARGS+=( "--ssl-ca=${COLORS_DB_SSL_CA}" )
 fi
 
-# Apply SSL mode
 if [[ -n "${COLORS_DB_SSL_MODE:-}" ]]; then
   case "$COLORS_DB_SSL_MODE" in
     VERIFY_CA|VERIFY_IDENTITY)
       if supports_ssl_mode; then
         MYSQL_SSL_ARGS+=( "--ssl-mode=${COLORS_DB_SSL_MODE}" )
       else
-        # Older clients: best effort
-        # VERIFY_IDENTITY is not available; degrade to CA verification
         if supports_verify_server_cert; then
           MYSQL_SSL_ARGS+=( "--ssl-verify-server-cert" )
         fi
-        # Force TLS on older clients
         MYSQL_SSL_ARGS+=( "--ssl" )
       fi
       ;;
@@ -144,14 +132,24 @@ apply_file() {
 
   [[ -f "$file_path" ]] || die "Migration not found: $file_path"
 
-  if is_applied "$fname"; then
+  if [[ "$FORCE" -eq 0 ]] && is_applied "$fname"; then
     info "SKIP (already applied): $fname"
     return 0
   fi
 
-  info "APPLY: $fname"
-  mysql "${MYSQL_BASE_ARGS[@]}" "${MYSQL_SSL_ARGS[@]}" < "$file_path"
-  mysql_exec "INSERT INTO ${MIGRATIONS_TABLE}(filename) VALUES('${fname}');"
+  if [[ "$FORCE" -eq 1 ]]; then
+    info "FORCE APPLY: $fname"
+  else
+    info "APPLY: $fname"
+  fi
+
+  # Hide noisy SELECT output (like "SELECT 1") but keep errors visible
+  mysql "${MYSQL_BASE_ARGS[@]}" "${MYSQL_SSL_ARGS[@]}" < "$file_path" >/dev/null
+
+  if ! is_applied "$fname"; then
+    mysql_exec "INSERT INTO ${MIGRATIONS_TABLE}(filename) VALUES('${fname}');"
+  fi
+
   info "DONE: $fname"
 }
 
@@ -185,7 +183,7 @@ run_all() {
 run_one() {
   ensure_migrations_table
   local fname="${1:-}"
-  [[ -n "$fname" ]] || die "Missing filename. Try: ./scripts/db_migrate.sh one <file.sql>"
+  [[ -n "$fname" ]] || die "Missing filename. Try: ./scripts/db_migrate_mysql.sh one <file.sql>"
   apply_file "$MIGRATIONS_DIR/$fname"
 }
 
@@ -195,6 +193,6 @@ case "$cmd" in
   one)    shift; run_one "${1:-}" ;;
   status) status ;;
   list)   list_files ;;
-  -h|--help|"") usage ;;
+  "")     usage; exit 1 ;;
   *) die "Unknown command: $cmd (use --help)" ;;
 esac

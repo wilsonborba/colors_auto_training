@@ -1,6 +1,9 @@
+import datetime
 from typing import Optional
 
+from core.logs import debug, error
 from core.settings import app_settings
+from dal.local.db_adapter import DBAdapter
 from dal.remote.groq_adapter import GroqApiAdapter
 from domain.models.groq_api_model import GroqResponseSchema
 
@@ -14,6 +17,7 @@ class IngestionService:
             timeout_seconds=self.app_settings.GROQ_TIMEOUT,
             base_url=self.app_settings.GROQ_BASE_URL,
         )
+        self.db_adapter = DBAdapter()
 
     def get_keywords_from_groq(
         self, user_query: Optional[str] = None, prompt: Optional[str] = None
@@ -37,3 +41,36 @@ class IngestionService:
 
         response = self.groq_api_adapter.query(user_query=user_query, prompt=prompt)
         return response
+
+    def save_keywords_to_db(
+        self, keywords: list[str], query: str
+    ) -> tuple[list[str], list[str]]:
+        # Implement your DB saving logic here using self.db_adapter
+        # For example, you might have a table with columns: id (auto), query (string), keyword (string)
+        # def insert_row(self, table_name: str, data: dict, schema: str | None = None):
+
+        added_keywords = []
+        missed_keywords = []
+
+        try:
+            for keyword in keywords:
+                inserted = self.db_adapter.insert_row(
+                    "keywords",
+                    {
+                        "query_search": query,
+                        "key_name": keyword,
+                        "videos_extracted": False,
+                    },
+                    ignore=True,
+                )
+
+                if inserted:
+                    added_keywords.append(keyword)
+                else:
+                    missed_keywords.append(keyword)
+
+        except Exception as e:
+            error(f"Error saving keywords to DB: {e}")
+            raise
+
+        return added_keywords, missed_keywords
